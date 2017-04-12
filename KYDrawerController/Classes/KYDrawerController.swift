@@ -24,6 +24,7 @@ import UIKit
 
 @objc public protocol KYDrawerControllerDelegate {
     @objc optional func drawerController(_ drawerController: KYDrawerController, stateChanged state: KYDrawerController.DrawerState)
+    @objc optional func drawerController(_ drawerController: KYDrawerController, statusBarStateChanged state: KYDrawerController.StatusBarState)
 }
 
 open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
@@ -39,7 +40,16 @@ open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
     @objc public enum DrawerState: Int {
         case opened, closed
     }
+    
+    @objc public enum StatusBarState: Int {
+        case show, hide
+    }
 
+    var statusBarState : StatusBarState = .show {
+        didSet {
+            self.delegate?.drawerController?(self, statusBarStateChanged: statusBarState)
+        }
+    }
     /**************************************************************************/
     // MARK: - Properties
     /**************************************************************************/
@@ -55,6 +65,11 @@ open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
     private var _drawerConstraint: NSLayoutConstraint!
     
     private var _drawerWidthConstraint: NSLayoutConstraint!
+    
+    private var _mainLeadingConstraint: NSLayoutConstraint!
+    
+    private var _mainTrailingConstraint: NSLayoutConstraint!
+
     
     private var _panStartLocation = CGPoint.zero
     
@@ -159,15 +174,9 @@ open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
                     views: viewDictionary
                 )
             )
-            view.addConstraints(
-                NSLayoutConstraint.constraints(
-                    withVisualFormat: "H:|-0-[mainView]-0-|",
-                    options: [],
-                    metrics: nil,
-                    views: viewDictionary
-                )
-            )
-
+            _mainLeadingConstraint = NSLayoutConstraint(item: mainViewController.view, attribute: .leading, relatedBy: .equal, toItem: view, attribute: .leading, multiplier: 1, constant: 0)
+            _mainTrailingConstraint = NSLayoutConstraint(item: mainViewController.view, attribute: .trailing, relatedBy: .equal, toItem: view, attribute: .trailing, multiplier: 1, constant: 0)
+            view.addConstraints([_mainTrailingConstraint,_mainLeadingConstraint])
             mainViewController.didMove(toParentViewController: self)
         }
     }
@@ -252,6 +261,9 @@ open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
         super.init(coder: aDecoder)
     }
     
+    override public init(nibName nibNameOrNil: String?, bundle nibBundleOrNil: Bundle?) {
+        super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
+    }
     
     
     /**************************************************************************/
@@ -323,8 +335,7 @@ open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
     /**************************************************************************/
     // MARK: - Public Method
     /**************************************************************************/
-    
-    public func setDrawerState(_ state: DrawerState, animated: Bool) {
+    public func setDrawerState(_ state: DrawerState, animated: Bool, completionHandler:(()->())?) {
         _containerView.isHidden = false
         let duration: TimeInterval = animated ? drawerAnimationDuration : 0
 
@@ -335,29 +346,37 @@ open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
             mainViewController?.beginAppearanceTransition(!isAppearing, animated: animated)
         }
 
+        switch state {
+        case .closed:
+            self._drawerConstraint.constant     = 0
+            self._mainLeadingConstraint.constant = 0
+            self._mainTrailingConstraint.constant = 0
+            self._containerView.backgroundColor = UIColor(white: 0, alpha: 0)
+            self.statusBarState = .show
+            self.mainViewController.view.isUserInteractionEnabled = true
+        case .opened:
+            self.statusBarState = .hide
+            let constant: CGFloat
+            switch self.drawerDirection {
+            case .left:
+                constant = self.drawerWidth
+            case .right:
+                constant = -self.drawerWidth
+            }
+            self._drawerConstraint.constant     = constant
+            self._mainLeadingConstraint.constant = constant
+            self._mainTrailingConstraint.constant = -constant
+            self._containerView.backgroundColor = UIColor(
+                white: 0,
+                alpha: self.containerViewMaxAlpha
+            )
+            self.mainViewController.view.isUserInteractionEnabled = false
+        }
         UIView.animate(withDuration: duration,
             delay: 0,
             options: .curveEaseOut,
             animations: { () -> Void in
-                switch state {
-                case .closed:
-                    self._drawerConstraint.constant     = 0
-                    self._containerView.backgroundColor = UIColor(white: 0, alpha: 0)
-                case .opened:
-                    let constant: CGFloat
-                    switch self.drawerDirection {
-                    case .left:
-                        constant = self.drawerWidth
-                    case .right:
-                        constant = -self.drawerWidth
-                    }
-                    self._drawerConstraint.constant     = constant
-                    self._containerView.backgroundColor = UIColor(
-                        white: 0
-                        , alpha: self.containerViewMaxAlpha
-                    )
-                }
-                self._containerView.layoutIfNeeded()
+                self.view.layoutIfNeeded()
             }) { (finished: Bool) -> Void in
                 if state == .closed {
                     self._containerView.isHidden = true
@@ -366,8 +385,16 @@ open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
                 self.mainViewController?.endAppearanceTransition()
                 self._isAppearing = nil
                 self.delegate?.drawerController?(self, stateChanged: state)
+                if let handler = completionHandler {
+                    handler()
+                }
         }
     }
+        
+    public func setDrawerState(_ state: DrawerState, animated: Bool) {
+        setDrawerState(state, animated: animated, completionHandler: nil)
+    }
+    
     
     /**************************************************************************/
     // MARK: - Private Method
@@ -400,7 +427,8 @@ open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
                 containerViewMaxAlpha*(abs(constant)/drawerWidth)
             )
         }
-        
+        _mainLeadingConstraint.constant = constant
+        _mainTrailingConstraint.constant = -constant
         _drawerConstraint.constant = constant
         _containerView.backgroundColor = UIColor(
             white: 0,
@@ -418,6 +446,7 @@ open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
 
             _panStartLocation = sender.location(in: view)
             _panDelta         = delta
+            self.statusBarState = .hide
         case .ended, .cancelled:
             setDrawerState(drawerState, animated: true)
         default:
