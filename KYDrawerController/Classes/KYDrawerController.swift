@@ -45,7 +45,7 @@ open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
         case show, hide
     }
 
-    var statusBarState : StatusBarState = .show {
+    open var statusBarState : StatusBarState = .show {
         didSet {
             self.delegate?.drawerController?(self, statusBarStateChanged: statusBarState)
         }
@@ -181,7 +181,7 @@ open class KYDrawerController: UIViewController, UIGestureRecognizerDelegate {
         }
     }
     
-    public var drawerViewController : UIViewController? {
+    open var drawerViewController : UIViewController? {
         didSet {
             if let oldController = oldValue {
                 oldController.willMove(toParentViewController: nil)
